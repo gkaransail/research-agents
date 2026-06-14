@@ -1,0 +1,19 @@
+version: '3.9'
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./research_outputs:/app/research_outputs
+      - ./logs:/app/logs
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    command: uvicorn main:app --host 0.0.0.0 --port 8001
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
