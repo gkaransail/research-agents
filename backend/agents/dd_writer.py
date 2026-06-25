@@ -25,7 +25,7 @@ class DDWriterAgent(BaseAgent):
 
         reg_points = {"GREEN": 40, "YELLOW": 25, "RED": 10}.get(regulatory["regulatory_status"], 25)
         risk_points = max(0, 20 - (risk["risk_score"] * 2))
-        dd_score = 40 + reg_points + risk_points  # valuation=40 base + regulatory + risk
+        dd_score = 40 + reg_points + risk_points
 
         if dd_score >= 70:
             recommendation = "PROCEED"

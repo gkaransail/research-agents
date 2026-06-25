@@ -1,7 +1,6 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Callable, Any
 from fastapi import WebSocket
 from loguru import logger
 
@@ -13,8 +12,6 @@ def _now() -> str:
 
 
 class ConnectionManager:
-    """Manages WebSocket connections per workflow."""
-
     def __init__(self):
         self._connections: dict[str, list[WebSocket]] = {}
 
@@ -45,17 +42,13 @@ manager = ConnectionManager()
 
 
 class WorkflowManager:
-    """Creates workflows and emits events — used by agents."""
-
     def __init__(self, workflow_id: str):
         self.workflow_id = workflow_id
 
     async def emit(self, agent_name: str, event_type: str, message: str, data: dict | None = None):
         ev_id = str(uuid.uuid4())
         ts = _now()
-
         await db.insert_event(ev_id, self.workflow_id, agent_name, event_type, message, data, ts)
-
         payload = {
             "type": "event",
             "event": {

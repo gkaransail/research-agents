@@ -21,8 +21,6 @@ class WriterAgent(BaseAgent):
 
         sources_section = self._build_sources_section(pages, search_results)
 
-        await self.emit("thinking", "Generating final report with Groq LLM...")
-
         report = await llm.chat(
             messages=[
                 {
@@ -56,22 +54,15 @@ class WriterAgent(BaseAgent):
         report_with_meta = self._add_metadata(report, query, pages, search_results, sources_section)
         filepath = self._save(query, report_with_meta)
 
-        await self.emit(
-            "completed",
-            f"Report saved → {filepath}",
-            {"file": str(filepath), "length": len(report_with_meta)},
-        )
+        await self.emit("completed", f"Report saved → {filepath}", {"file": str(filepath), "length": len(report_with_meta)})
         return {"report": report_with_meta, "output_file": str(filepath)}
 
     def _add_metadata(self, report: str, query: str, pages: list, search_results: list, sources: str) -> str:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         header = (
-            f"---\n"
-            f"query: {query}\n"
-            f"generated: {now}\n"
+            f"---\nquery: {query}\ngenerated: {now}\n"
             f"sources: {len(pages)} pages read, {len(search_results)} search results\n"
-            f"model: {settings.PRIMARY_MODEL}\n"
-            f"---\n\n"
+            f"model: {settings.PRIMARY_MODEL}\n---\n\n"
         )
         return header + report + "\n\n" + sources
 
@@ -82,8 +73,7 @@ class WriterAgent(BaseAgent):
             url = page["url"]
             if url not in seen:
                 seen.add(url)
-                title = page.get("title") or url
-                lines.append(f"- [{title}]({url})")
+                lines.append(f"- [{page.get('title') or url}]({url})")
         if not pages:
             for r in search_results[:10]:
                 url = r["url"]
@@ -96,9 +86,8 @@ class WriterAgent(BaseAgent):
         slug = re.sub(r"[^\w\s-]", "", query.lower())
         slug = re.sub(r"[\s]+", "_", slug)[:50]
         date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        filename = f"{date}_{slug}.md"
         out_dir = Path(settings.OUTPUT_DIR)
         out_dir.mkdir(parents=True, exist_ok=True)
-        path = out_dir / filename
+        path = out_dir / f"{date}_{slug}.md"
         path.write_text(content, encoding="utf-8")
         return path

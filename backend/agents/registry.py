@@ -1,10 +1,3 @@
-"""
-Agent registry — auto-discovery via @register_agent decorator.
-To add a new agent:
-  1. Create agents/my_agent.py
-  2. Decorate class with @register_agent("my_agent")
-  3. Import it in agents/__init__.py
-"""
 from typing import Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
