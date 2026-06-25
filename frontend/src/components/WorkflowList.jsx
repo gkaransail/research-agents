@@ -7,12 +7,10 @@ const STATUS_BADGE = {
   completed: 'bg-emerald-900/50 text-emerald-300',
   failed:    'bg-red-900/50 text-red-300',
 }
+const STATUS_ICON = { pending: '⏳', running: '⚡', completed: '✅', failed: '❌' }
+const TYPE_ICON = { dd: '🏢', research: '🔍' }
 
-const STATUS_ICON = {
-  pending: '⏳', running: '⚡', completed: '✅', failed: '❌',
-}
-
-export default function WorkflowList({ onSelect, refreshKey }) {
+export default function WorkflowList({ onSelect, selectedId, refreshKey, filterType }) {
   const [workflows, setWorkflows] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -23,9 +21,13 @@ export default function WorkflowList({ onSelect, refreshKey }) {
       .finally(() => setLoading(false))
   }, [refreshKey])
 
+  const filtered = filterType
+    ? workflows.filter(w => (w.type || 'research') === filterType)
+    : workflows
+
   async function handleDelete(e, wfId) {
     e.stopPropagation()
-    if (!confirm('Delete this research workflow?')) return
+    if (!confirm('Delete this workflow?')) return
     await deleteWorkflow(wfId)
     setWorkflows(prev => prev.filter(w => w.id !== wfId))
   }
@@ -38,27 +40,36 @@ export default function WorkflowList({ onSelect, refreshKey }) {
     )
   }
 
-  if (workflows.length === 0) {
+  if (filtered.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-gray-600">
-        <div className="text-5xl mb-3">🔬</div>
-        <div className="text-sm">No research yet. Start your first query!</div>
+        <div className="text-5xl mb-3">{filterType === 'dd' ? '🏢' : '🔬'}</div>
+        <div className="text-sm text-center">
+          {filterType === 'dd' ? 'No DD analyses yet.' : 'No research yet.'}
+        </div>
       </div>
     )
   }
 
   return (
     <div className="space-y-2">
-      {workflows.map(wf => (
+      {filtered.map(wf => (
         <div
           key={wf.id}
-          onClick={() => onSelect(wf.id)}
-          className="group bg-gray-900 hover:bg-gray-800 border border-gray-800 hover:border-gray-600 rounded-xl p-4 cursor-pointer transition-all"
+          onClick={() => onSelect(wf)}
+          className={`group border rounded-xl p-4 cursor-pointer transition-all ${
+            selectedId === wf.id
+              ? 'bg-gray-800 border-gray-600'
+              : 'bg-gray-900 hover:bg-gray-800 border-gray-800 hover:border-gray-600'
+          }`}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{wf.query}</p>
-              <p className="text-xs text-gray-600 mt-1 font-mono">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-xs">{TYPE_ICON[wf.type || 'research']}</span>
+                <p className="text-sm font-medium text-white truncate">{wf.query}</p>
+              </div>
+              <p className="text-xs text-gray-600 font-mono">
                 {new Date(wf.created_at).toLocaleString()}
               </p>
             </div>

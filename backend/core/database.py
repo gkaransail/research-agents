@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS workflows (
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    output_file TEXT
+    output_file TEXT,
+    type TEXT NOT NULL DEFAULT 'research'
 );
 
 CREATE TABLE IF NOT EXISTS workflow_events (
@@ -33,14 +34,18 @@ CREATE INDEX IF NOT EXISTS idx_workflows_created ON workflows(created_at DESC);
 async def init_db():
     async with aiosqlite.connect(DB) as db:
         await db.executescript(CREATE_SQL)
-        await db.commit()
+        try:
+            await db.execute("ALTER TABLE workflows ADD COLUMN type TEXT NOT NULL DEFAULT 'research'")
+            await db.commit()
+        except Exception:
+            pass  # column already exists
 
 
-async def create_workflow(wf_id: str, query: str, now: str):
+async def create_workflow(wf_id: str, query: str, now: str, workflow_type: str = "research"):
     async with aiosqlite.connect(DB) as db:
         await db.execute(
-            "INSERT INTO workflows (id, query, status, created_at, updated_at) VALUES (?, ?, 'pending', ?, ?)",
-            (wf_id, query, now, now),
+            "INSERT INTO workflows (id, query, status, created_at, updated_at, type) VALUES (?, ?, 'pending', ?, ?, ?)",
+            (wf_id, query, now, now, workflow_type),
         )
         await db.commit()
 

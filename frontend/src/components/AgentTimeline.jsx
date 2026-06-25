@@ -1,11 +1,16 @@
 import { useEffect, useRef } from 'react'
 
 const AGENT_ICONS = {
-  orchestrator: '🎯',
-  searcher: '🔍',
-  reader: '📄',
-  analyzer: '🧠',
-  writer: '✍️',
+  orchestrator:    '🎯',
+  dd_orchestrator: '🏢',
+  searcher:        '🔍',
+  reader:          '📄',
+  analyzer:        '🧠',
+  writer:          '✍️',
+  valuation:       '💰',
+  regulatory:      '⚖️',
+  risk:            '⚠️',
+  dd_writer:       '📋',
 }
 
 const EVENT_COLORS = {

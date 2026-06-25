@@ -1,25 +1,34 @@
-import asyncio
+import json
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse
 from loguru import logger
 
 from core import database as db
 from core.config import settings
 from core.workflow import manager, WorkflowManager, create_workflow
-from models.schemas import WorkflowCreate, WorkflowOut, WorkflowListItem, WorkflowEventOut
+from models.schemas import (
+    WorkflowCreate, WorkflowOut, WorkflowListItem, WorkflowEventOut,
+    DDWorkflowCreate, TokenizeRequest,
+)
 
-# Import agents to register them
-import agents.searcher  # noqa
-import agents.reader    # noqa
-import agents.analyzer  # noqa
-import agents.writer    # noqa
+import agents.searcher      # noqa
+import agents.reader        # noqa
+import agents.analyzer      # noqa
+import agents.writer        # noqa
 import agents.orchestrator  # noqa
+import agents.valuation     # noqa
+import agents.regulatory    # noqa
+import agents.risk          # noqa
+import agents.dd_writer     # noqa
+import agents.dd_orchestrator  # noqa
 from agents.registry import list_agents
 from agents.orchestrator import OrchestratorAgent
+from agents.dd_orchestrator import DDOrchestratorAgent
 
 
 @asynccontextmanager
@@ -39,7 +48,7 @@ app.add_middleware(
 )
 
 
-# ── Workflows ─────────────────────────────────────────────────────────────────
+# ── Research workflows ────────────────────────────────────────────────────────
 
 @app.post("/api/workflows", response_model=WorkflowListItem, status_code=201)
 async def start_research(body: WorkflowCreate, background_tasks: BackgroundTasks):
@@ -75,6 +84,46 @@ async def delete_workflow(wf_id: str):
         await conn.commit()
 
 
+# ── Due Diligence workflows ───────────────────────────────────────────────────
+
+@app.post("/api/dd-workflows", response_model=WorkflowListItem, status_code=201)
+async def start_dd_analysis(body: DDWorkflowCreate, background_tasks: BackgroundTasks):
+    wf_id = await create_workflow(body.asset_name, workflow_type="dd")
+    background_tasks.add_task(_run_dd, wf_id, body)
+    row = await db.get_workflow(wf_id)
+    return WorkflowListItem(**row)
+
+
+@app.post("/api/dd-workflows/{wf_id}/tokenize")
+async def tokenize_asset(wf_id: str, body: TokenizeRequest):
+    from core.deployer import deploy_rwa_token
+
+    row = await db.get_workflow(wf_id)
+    if not row:
+        raise HTTPException(404, "Workflow not found")
+    if not row.get("output_file"):
+        raise HTTPException(400, "DD analysis is not complete yet")
+
+    output = Path(row["output_file"]).read_text(encoding="utf-8")
+    params = _parse_tokenization_params(output)
+    if not params:
+        raise HTTPException(400, "Could not parse tokenization parameters from report")
+
+    try:
+        result = await deploy_rwa_token(
+            rpc_url=body.rpc_url,
+            private_key=body.private_key,
+            **params,
+        )
+        return result
+    except FileNotFoundError as e:
+        raise HTTPException(500, str(e))
+    except ConnectionError as e:
+        raise HTTPException(502, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Deployment failed: {e}")
+
+
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/outputs")
@@ -89,7 +138,7 @@ async def list_outputs():
 @app.get("/api/outputs/{filename}")
 async def get_output(filename: str):
     path = Path(settings.OUTPUT_DIR) / filename
-    if not path.exists() or not path.suffix == ".md":
+    if not path.exists() or path.suffix != ".md":
         raise HTTPException(404, "File not found")
     return PlainTextResponse(path.read_text(encoding="utf-8"))
 
@@ -106,35 +155,60 @@ async def get_agents():
 @app.websocket("/ws/{wf_id}")
 async def websocket_endpoint(websocket: WebSocket, wf_id: str):
     await manager.connect(wf_id, websocket)
-    # Send existing events on connect (catch-up for late subscribers)
     events = await db.get_workflow_events(wf_id)
     for ev in events:
-        await websocket.send_text(
-            __import__("json").dumps({"type": "event", "event": ev})
-        )
+        await websocket.send_text(json.dumps({"type": "event", "event": ev}))
     row = await db.get_workflow(wf_id)
     if row:
         await websocket.send_text(
-            __import__("json").dumps({"type": "status", "status": row["status"], "output_file": row.get("output_file")})
+            json.dumps({"type": "status", "status": row["status"], "output_file": row.get("output_file")})
         )
     try:
         while True:
-            await websocket.receive_text()  # keep alive
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(wf_id, websocket)
 
 
-# ── Background task ───────────────────────────────────────────────────────────
+# ── Background tasks ──────────────────────────────────────────────────────────
 
 async def _run_research(wf_id: str, query: str, depth: int):
     wf = WorkflowManager(wf_id)
     await wf.set_status("running")
     try:
-        orchestrator = OrchestratorAgent(wf)
-        result = await orchestrator.run({"query": query, "depth": depth})
-        output_file = result.get("output_file")
-        await wf.set_status("completed", output_file)
+        result = await OrchestratorAgent(wf).run({"query": query, "depth": depth})
+        await wf.set_status("completed", result.get("output_file"))
     except Exception as e:
         logger.exception(f"Workflow {wf_id} failed: {e}")
-        await wf.emit("orchestrator", "error", f"Research failed: {str(e)}")
+        await wf.emit("orchestrator", "error", f"Research failed: {e}")
         await wf.set_status("failed")
+
+
+async def _run_dd(wf_id: str, body: DDWorkflowCreate):
+    wf = WorkflowManager(wf_id)
+    await wf.set_status("running")
+    try:
+        result = await DDOrchestratorAgent(wf).run({
+            "asset_name": body.asset_name,
+            "asset_type": body.asset_type,
+            "asset_location": body.asset_location,
+            "asset_description": body.asset_description,
+            "depth": body.depth,
+        })
+        await wf.set_status("completed", result.get("output_file"))
+    except Exception as e:
+        logger.exception(f"DD workflow {wf_id} failed: {e}")
+        await wf.emit("dd_orchestrator", "error", f"Due diligence failed: {e}")
+        await wf.set_status("failed")
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _parse_tokenization_params(content: str) -> dict | None:
+    m = re.search(r"<!-- TOKENIZATION_PARAMS\n(.*?)\n-->", content, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except json.JSONDecodeError:
+            return None
+    return None

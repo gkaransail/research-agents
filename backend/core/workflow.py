@@ -80,8 +80,8 @@ class WorkflowManager:
         )
 
 
-async def create_workflow(query: str) -> str:
+async def create_workflow(query: str, workflow_type: str = "research") -> str:
     wf_id = str(uuid.uuid4())
     now = _now()
-    await db.create_workflow(wf_id, query, now)
+    await db.create_workflow(wf_id, query, now, workflow_type)
     return wf_id

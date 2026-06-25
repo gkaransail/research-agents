@@ -23,6 +23,12 @@ export const getOutput = (filename) =>
 export const getAgents = () =>
   api.get('/agents').then(r => r.data)
 
+export const startDDAnalysis = (body) =>
+  api.post('/dd-workflows', body).then(r => r.data)
+
+export const tokenizeAsset = (wfId, body) =>
+  api.post(`/dd-workflows/${wfId}/tokenize`, body).then(r => r.data)
+
 export function createWorkflowSocket(wfId) {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
   return new WebSocket(`${proto}://${window.location.host}/ws/${wfId}`)
