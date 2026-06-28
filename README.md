@@ -6,6 +6,8 @@ A multi-agent research system built from scratch — no LangChain, no CrewAI. Yo
 
 ![Pipeline](https://img.shields.io/badge/agents-5-blue) ![Stack](https://img.shields.io/badge/stack-FastAPI%20%2B%20React-green) ![LLM](https://img.shields.io/badge/LLM-Groq%20free%20tier-orange)
 
+![](.github/screenshot.png)
+
 ---
 
 ## What it does
